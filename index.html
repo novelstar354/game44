@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>BLOCKS</title>
+<link rel="icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS8jV8y88XxNVwFE6Pq0IUOI_gsefgZbos3YA&s" sizes="16×16" type="image/png" /> 
+
+<style>
+:root{ --neon:#00f7ff; }
+
+body{
+margin:0;
+background:radial-gradient(circle at center,#0a0f1c,#000);
+font-family:Arial;
+color:white;
+display:flex;
+flex-direction:column;
+align-items:center;
+overflow:hidden;
+}
+
+h1{
+margin:10px;
+color:var(--neon);
+text-shadow:0 0 20px var(--neon);
+}
+
+#wrap{ display:flex; gap:20px; position:relative; }
+
+canvas{
+background:#000;
+border-radius:12px;
+box-shadow:0 0 40px var(--neon);
+}
+
+.panel{
+background:rgba(255,255,255,0.05);
+backdrop-filter:blur(10px);
+padding:15px;
+border-radius:16px;
+text-align:center;
+}
+
+.overlay{
+position:absolute;
+inset:0;
+background:rgba(0,0,0,0.8);
+display:flex;
+flex-direction:column;
+justify-content:center;
+align-items:center;
+opacity:0;
+pointer-events:none;
+transition:.3s;
+}
+
+.overlay h2{
+font-size:50px;
+color:#ff0044;
+text-shadow:0 0 40px #ff0044;
+}
+
+.overlay button{
+margin-top:20px;
+padding:10px 25px;
+border:none;
+border-radius:12px;
+background:var(--neon);
+cursor:pointer;
+}
+
+#mobile{ display:none; margin-top:15px; gap:8px; flex-wrap:wrap; }
+
+#mobile button{
+width:60px;height:60px;
+border:none;border-radius:12px;
+background:rgba(255,255,255,0.1);
+color:white;
+}
+
+@media(max-width:900px){
+#wrap{flex-direction:column;}
+#mobile{display:flex;}
+}
+</style>
+</head>
+<body>
+
+<h1>BLOCKS NEON</h1>
+
+<div id="wrap">
+<canvas id="game" width="300" height="600"></canvas>
+
+<div id="gameOver" class="overlay">
+<h2>GAME OVER</h2>
+<div id="finalScore"></div>
+<button onclick="retry()">RETRY</button>
+</div>
+
+<div class="panel">
+<div>Score</div>
+<div id="score">0</div>
+<div>Level</div>
+<div id="level">1</div>
+</div>
+</div>
+
+<div id="mobile">
+<button onclick="move(-1)">←</button>
+<button onclick="rotate()">⟳</button>
+<button onclick="move(1)">→</button>
+<button onclick="softDrop()">↓</button>
+<button onclick="hardDrop()">⤓</button>
+</div>
+
+<script>
+const COLS=10,ROWS=20,SIZE=30;
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let board,current,next,x,y;
+let score=0,level=1;
+let dropInterval=800,dropCounter=0,lastTime=0;
+let gameOver=false,paused=false;
+
+let flashTimer=0;
+let tetrisEffect=0;
+
+const pieces={
+I:[[1,1,1,1]],
+O:[[1,1],[1,1]],
+T:[[0,1,0],[1,1,1]],
+L:[[0,0,1],[1,1,1]],
+J:[[1,0,0],[1,1,1]],
+S:[[0,1,1],[1,1,0]],
+Z:[[1,1,0],[0,1,1]]
+};
+
+const colors={
+I:"#00f7ff",O:"#ffe600",T:"#c400ff",
+L:"#ff8800",J:"#0066ff",S:"#00ff88",Z:"#ff0044"
+};
+
+function init(){
+board=Array.from({length:ROWS},()=>Array(COLS).fill(0));
+score=0;level=1;
+dropInterval=800;
+gameOver=false;paused=false;
+flashTimer=0;tetrisEffect=0;
+document.getElementById("score").textContent=score;
+document.getElementById("level").textContent=level;
+document.getElementById("gameOver").style.opacity=0;
+document.getElementById("gameOver").style.pointerEvents="none";
+resetPiece();
+}
+
+function randomPiece(){
+const keys=Object.keys(pieces);
+const name=keys[Math.floor(Math.random()*keys.length)];
+return {name,shape:pieces[name]};
+}
+
+function resetPiece(){
+current=next||randomPiece();
+next=randomPiece();
+x=3;y=0;
+if(collision()) triggerGameOver();
+}
+
+function collision(){
+return collisionAt(x,y);
+}
+
+function collisionAt(testX,testY){
+return current.shape.some((r,ry)=>
+r.some((v,cx)=>{
+if(!v) return false;
+let nx=testX+cx,ny=testY+ry;
+return nx<0||nx>=COLS||ny>=ROWS||board[ny]?.[nx];
+}));
+}
+
+function merge(){
+current.shape.forEach((r,ry)=>
+r.forEach((v,cx)=>{
+if(v) board[y+ry][x+cx]=colors[current.name];
+}));
+}
+
+function clearLines(){
+let lines=0;
+board=board.filter(row=>{
+if(row.every(v=>v)){lines++;return false;}
+return true;
+});
+while(board.length<ROWS)
+board.unshift(Array(COLS).fill(0));
+
+if(lines){
+flashTimer=10;
+if(lines===4) tetrisEffect=40;
+
+score+=lines*150;
+level=Math.floor(score/800)+1;
+dropInterval=Math.max(100,800-(level-1)*70);
+document.getElementById("score").textContent=score;
+document.getElementById("level").textContent=level;
+}
+}
+
+function softDrop(){
+if(paused||gameOver) return;
+y++;
+if(collision()){
+y--;
+merge();
+clearLines();
+resetPiece();
+}
+}
+
+function hardDrop(){
+if(paused||gameOver) return;
+while(!collision()) y++;
+y--;
+merge();
+clearLines();
+resetPiece();
+}
+
+function move(dir){
+if(paused||gameOver) return;
+x+=dir;
+if(collision()) x-=dir;
+}
+
+function rotate(){
+if(paused||gameOver) return;
+const old=current.shape;
+const rotated=old[0].map((_,i)=>old.map(r=>r[i]).reverse());
+current.shape=rotated;
+if(collision()) current.shape=old;
+}
+
+function togglePause(){ if(!gameOver) paused=!paused; }
+
+function triggerGameOver(){
+gameOver=true;
+document.getElementById("finalScore").textContent="Score: "+score;
+const o=document.getElementById("gameOver");
+o.style.opacity=1;
+o.style.pointerEvents="auto";
+}
+
+function retry(){ init(); }
+
+function drawNeonCell(cx,cy,color,ghost=false){
+const px=cx*SIZE,py=cy*SIZE;
+ctx.save();
+ctx.globalAlpha=ghost?0.25:1;
+ctx.shadowColor=color;
+ctx.shadowBlur=20;
+ctx.fillStyle=color;
+ctx.fillRect(px,py,SIZE,SIZE);
+ctx.shadowBlur=0;
+ctx.lineWidth=2;
+ctx.strokeStyle="white";
+ctx.strokeRect(px+3,py+3,SIZE-6,SIZE-6);
+ctx.restore();
+}
+
+function draw(){
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+board.forEach((row,ry)=>
+row.forEach((val,cx)=>{
+if(val) drawNeonCell(cx,ry,val);
+})
+);
+
+let gy=y;
+while(!collisionAt(x,gy+1)) gy++;
+current.shape.forEach((r,ry)=>
+r.forEach((v,cx)=>{
+if(v) drawNeonCell(x+cx,gy+ry,colors[current.name],true);
+})
+);
+
+current.shape.forEach((r,ry)=>
+r.forEach((v,cx)=>{
+if(v) drawNeonCell(x+cx,y+ry,colors[current.name]);
+})
+);
+
+if(flashTimer>0){
+ctx.fillStyle="rgba(255,255,255,0.4)";
+ctx.fillRect(0,0,canvas.width,canvas.height);
+flashTimer--;
+}
+
+if(tetrisEffect>0){
+ctx.fillStyle="rgba(0,255,255,"+(tetrisEffect/40)+")";
+ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle="#00f7ff";
+ctx.font="bold 60px Arial";
+ctx.textAlign="center";
+ctx.shadowColor="#00f7ff";
+ctx.shadowBlur=30;
+ctx.fillText("TETRIS!",canvas.width/2,canvas.height/2);
+ctx.shadowBlur=0;
+tetrisEffect--;
+}
+
+if(paused){
+ctx.fillStyle="rgba(0,0,0,0.7)";
+ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle="#00f7ff";
+ctx.font="bold 50px Arial";
+ctx.textAlign="center";
+ctx.fillText("PAUSE",canvas.width/2,canvas.height/2);
+}
+}
+
+document.addEventListener("keydown",e=>{
+if(e.key==="ArrowLeft") move(-1);
+if(e.key==="ArrowRight") move(1);
+if(e.key==="ArrowUp") rotate();
+if(e.key==="ArrowDown") softDrop();
+if(e.key===" ") hardDrop();
+if(e.key==="p") togglePause();
+if(e.key==="r") retry();
+});
+
+function update(time=0){
+const delta=time-lastTime;
+lastTime=time;
+
+if(!paused && !gameOver){
+dropCounter+=delta;
+if(dropCounter>dropInterval){
+softDrop();
+dropCounter=0;
+}
+}
+
+draw();
+requestAnimationFrame(update);
+}
+
+init();
+update();
+</script>
+</body>
+</html>
