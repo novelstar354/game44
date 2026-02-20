@@ -3,9 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>BLOCKS</title>
+<title>BLOCKS NEON</title>
 <link rel="icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS8jV8y88XxNVwFE6Pq0IUOI_gsefgZbos3YA&s" sizes="16×16" type="image/png" /> 
-
 <style>
 :root{ --neon:#00f7ff; }
 
@@ -13,7 +12,6 @@ body{
 margin:0;
 background:radial-gradient(circle at center,#0a0f1c,#000);
 font-family:Arial;
-color:white;
 display:flex;
 flex-direction:column;
 align-items:center;
@@ -103,6 +101,8 @@ color:white;
 <div id="score">0</div>
 <div>Level</div>
 <div id="level">1</div>
+<div style="margin-top:15px;">NEXT</div>
+<canvas id="next" width="120" height="120"></canvas>
 </div>
 </div>
 
@@ -118,14 +118,14 @@ color:white;
 const COLS=10,ROWS=20,SIZE=30;
 const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
+const nextCanvas=document.getElementById("next");
+const nextCtx=nextCanvas.getContext("2d");
 
 let board,current,next,x,y;
-let score=0,level=1;
-let dropInterval=800,dropCounter=0,lastTime=0;
-let gameOver=false,paused=false;
-
-let flashTimer=0;
-let tetrisEffect=0;
+let score,level;
+let dropInterval,dropCounter,lastTime;
+let gameOver,paused;
+let flashTimer,tetrisEffect;
 
 const pieces={
 I:[[1,1,1,1]],
@@ -146,12 +146,17 @@ function init(){
 board=Array.from({length:ROWS},()=>Array(COLS).fill(0));
 score=0;level=1;
 dropInterval=800;
-gameOver=false;paused=false;
-flashTimer=0;tetrisEffect=0;
+dropCounter=0;
+lastTime=0;
+gameOver=false;
+paused=false;
+flashTimer=0;
+tetrisEffect=0;
 document.getElementById("score").textContent=score;
 document.getElementById("level").textContent=level;
 document.getElementById("gameOver").style.opacity=0;
 document.getElementById("gameOver").style.pointerEvents="none";
+next=randomPiece();
 resetPiece();
 }
 
@@ -162,14 +167,19 @@ return {name,shape:pieces[name]};
 }
 
 function resetPiece(){
-current=next||randomPiece();
+current=next;
 next=randomPiece();
 x=3;y=0;
 if(collision()) triggerGameOver();
 }
 
 function collision(){
-return collisionAt(x,y);
+return current.shape.some((r,ry)=>
+r.some((v,cx)=>{
+if(!v) return false;
+let nx=x+cx,ny=y+ry;
+return nx<0||nx>=COLS||ny>=ROWS||board[ny]?.[nx];
+}));
 }
 
 function collisionAt(testX,testY){
@@ -198,9 +208,8 @@ while(board.length<ROWS)
 board.unshift(Array(COLS).fill(0));
 
 if(lines){
-flashTimer=10;
+flashTimer=8;
 if(lines===4) tetrisEffect=40;
-
 score+=lines*150;
 level=Math.floor(score/800)+1;
 dropInterval=Math.max(100,800-(level-1)*70);
@@ -210,7 +219,6 @@ document.getElementById("level").textContent=level;
 }
 
 function softDrop(){
-if(paused||gameOver) return;
 y++;
 if(collision()){
 y--;
@@ -221,7 +229,6 @@ resetPiece();
 }
 
 function hardDrop(){
-if(paused||gameOver) return;
 while(!collision()) y++;
 y--;
 merge();
@@ -230,20 +237,18 @@ resetPiece();
 }
 
 function move(dir){
-if(paused||gameOver) return;
 x+=dir;
 if(collision()) x-=dir;
 }
 
 function rotate(){
-if(paused||gameOver) return;
 const old=current.shape;
 const rotated=old[0].map((_,i)=>old.map(r=>r[i]).reverse());
 current.shape=rotated;
 if(collision()) current.shape=old;
 }
 
-function togglePause(){ if(!gameOver) paused=!paused; }
+function togglePause(){ paused=!paused; }
 
 function triggerGameOver(){
 gameOver=true;
@@ -281,6 +286,7 @@ if(val) drawNeonCell(cx,ry,val);
 
 let gy=y;
 while(!collisionAt(x,gy+1)) gy++;
+
 current.shape.forEach((r,ry)=>
 r.forEach((v,cx)=>{
 if(v) drawNeonCell(x+cx,gy+ry,colors[current.name],true);
@@ -320,6 +326,31 @@ ctx.font="bold 50px Arial";
 ctx.textAlign="center";
 ctx.fillText("PAUSE",canvas.width/2,canvas.height/2);
 }
+
+drawNext();
+}
+
+function drawNext(){
+nextCtx.clearRect(0,0,nextCanvas.width,nextCanvas.height);
+const shape=next.shape;
+const size=25;
+const offsetX=(nextCanvas.width-shape[0].length*size)/2;
+const offsetY=(nextCanvas.height-shape.length*size)/2;
+
+shape.forEach((row,ry)=>{
+row.forEach((v,cx)=>{
+if(!v) return;
+const px=offsetX+cx*size;
+const py=offsetY+ry*size;
+nextCtx.shadowColor=colors[next.name];
+nextCtx.shadowBlur=15;
+nextCtx.fillStyle=colors[next.name];
+nextCtx.fillRect(px,py,size,size);
+nextCtx.shadowBlur=0;
+nextCtx.strokeStyle="white";
+nextCtx.strokeRect(px+2,py+2,size-4,size-4);
+});
+});
 }
 
 document.addEventListener("keydown",e=>{
